@@ -1,8 +1,5 @@
+@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
 
 @layer base {
   body {
@@ -13,4 +10,13 @@
 
 .font-mono {
   font-family: 'JetBrains Mono', monospace;
+}
+
+@media print {
+  @page { margin: 1cm; size: A4; }
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    @apply bg-white text-slate-900;
+  }
 }

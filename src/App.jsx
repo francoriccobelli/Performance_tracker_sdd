@@ -1,29 +1,35 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LayoutDashboard, Users, UserCheck, History, Target } from 'lucide-react';
+import { LayoutDashboard, Users, UserCheck, History, Target, Settings, Printer } from 'lucide-react';
 import {
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer,
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip
 } from 'recharts';
 
-const STORAGE_KEY = 'studiopulse_team_v2';
+const STORAGE_KEY = 'studiopulse_team_v3';
+const STORAGE_KEY_MILESTONE = 'studiopulse_milestone_v2';
+
+const STORAGE_KEY_MILESTONE_STATUS = 'studiopulse_milestone_status_v2';
 
 const initialTeam = [
   {
     id: 1, name: 'Alice Smith', role: 'Software Engineer', team: 'Software',
-    metrics: { velocity: 85, quality: 90, presence: 95, milestone: 80, excellence: 4, collaboration: 5, ownership: 4 },
+    metrics: { sprint: 85, qa: 90, sync: 95, milestone: 80 },
+    peerFeedback: { excellence: 4, collab: 5, ownership: 4 },
     history: [
-      { month: '2023-08', pulse: 80, metrics: {} },
-      { month: '2023-09', pulse: 85, metrics: {} }
+      { month: '2023-08', pulse: 80, metrics: {}, peerFeedback: {} },
+      { month: '2023-09', pulse: 85, metrics: {}, peerFeedback: {} }
     ]
   },
   {
     id: 2, name: 'Bob Jones', role: 'UX Designer', team: 'Design',
-    metrics: { velocity: 75, quality: 85, presence: 90, milestone: 70, excellence: 3, collaboration: 4, ownership: 4 },
+    metrics: { sprint: 75, qa: 85, sync: 90, milestone: 70 },
+    peerFeedback: { excellence: 3, collab: 4, ownership: 4 },
     history: []
   },
   {
     id: 3, name: 'Charlie Brown', role: 'Product Manager', team: 'Software',
-    metrics: { velocity: 90, quality: 85, presence: 100, milestone: 95, excellence: 5, collaboration: 4, ownership: 5 },
+    metrics: { sprint: 90, qa: 85, sync: 100, milestone: 95 },
+    peerFeedback: { excellence: 5, collab: 4, ownership: 5 },
     history: [
       { month: '2023-09', pulse: 92, metrics: {} }
     ]
@@ -40,21 +46,34 @@ const getStoredTeam = () => {
   }
 };
 
+const getStoredMilestone = () => {
+  return localStorage.getItem(STORAGE_KEY_MILESTONE) || 'Current Month - Alpha Release';
+};
+
 export default function App() {
   const [activeView, setActiveView] = useState('dashboard');
   const [team, setTeam] = useState(getStoredTeam);
+  const [milestone, setMilestone] = useState(getStoredMilestone);
+  const [milestoneStatus, setMilestoneStatus] = useState(() => localStorage.getItem(STORAGE_KEY_MILESTONE_STATUS) || 'On Track');
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(team));
   }, [team]);
 
-  const calculateScores = (metrics) => {
-    const { velocity, quality, presence, milestone, excellence, collaboration, ownership } = metrics;
-    const quantAvg = (Number(velocity) + Number(quality) + Number(presence) + Number(milestone)) / 4;
-    const qualAvg = (((Number(excellence) + Number(collaboration) + Number(ownership)) / 3) / 5) * 100;
-    const pulseScore = Math.round((quantAvg * 0.6) + (qualAvg * 0.4));
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_MILESTONE, milestone);
+    localStorage.setItem(STORAGE_KEY_MILESTONE_STATUS, milestoneStatus);
+  }, [milestone, milestoneStatus]);
+
+  const calculateScores = (member) => {
+    const metrics = member.metrics || { sprint: 0, qa: 0, sync: 0, milestone: 0 };
+    const peerFeedback = member.peerFeedback || { excellence: 0, collab: 0, ownership: 0 };
+
+    const hardScore = (Number(metrics.sprint || 0) + Number(metrics.qa || 0) + Number(metrics.sync || 0) + Number(metrics.milestone || 0)) / 4;
+    const softScore = ((Number(peerFeedback.excellence || 0) + Number(peerFeedback.collab || 0) + Number(peerFeedback.ownership || 0)) / 3) * 20;
+    const pulseScore = Math.round((hardScore * 0.6) + (softScore * 0.4));
     
-    return { quant: Math.round(quantAvg), qual: Math.round(qualAvg), pulse: pulseScore || 0 };
+    return { quant: Math.round(hardScore), qual: Math.round(softScore), pulse: pulseScore || 0 };
   };
 
   const navItems = [
@@ -62,11 +81,12 @@ export default function App() {
     { id: 'team', label: 'Team Roster', icon: Users },
     { id: 'review', label: 'Review Entry', icon: UserCheck },
     { id: 'history', label: 'History & Growth', icon: History },
+    { id: 'milestone', label: 'Milestone Settings', icon: Settings },
   ];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans flex overflow-hidden">
-      <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
+      <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col print:hidden">
         <div className="p-6 border-b border-slate-800">
           <div className="flex items-center gap-2 text-indigo-500 mb-1">
             <Target className="w-6 h-6" />
@@ -96,20 +116,28 @@ export default function App() {
         </nav>
       </aside>
 
-      <main className="flex-1 overflow-auto p-8 relative">
-        {activeView === 'dashboard' && <ReportView team={team} calculateScores={calculateScores} />}
+      <main className="flex-1 overflow-auto p-8 relative print:p-0">
+        {activeView === 'dashboard' && <ReportView team={team} calculateScores={calculateScores} milestone={milestone} milestoneStatus={milestoneStatus} />}
         {activeView === 'team' && <TeamRosterView team={team} setTeam={setTeam} />}
-        {activeView === 'review' && <ReviewEntryView team={team} setTeam={setTeam} calculateScores={calculateScores} />}
+        {activeView === 'review' && <ReviewEntryView team={team} setTeam={setTeam} calculateScores={calculateScores} milestone={milestone} />}
         {activeView === 'history' && <HistoryView team={team} />}
+        {activeView === 'milestone' && <MilestoneManagerView milestone={milestone} setMilestone={setMilestone} milestoneStatus={milestoneStatus} setMilestoneStatus={setMilestoneStatus} />}
       </main>
     </div>
   );
 }
 
-function ReportView({ team, calculateScores }) {
+function ReportView({ team, calculateScores, milestone, milestoneStatus }) {
+  const [teamFilter, setTeamFilter] = useState('All');
+
+  const filteredTeam = useMemo(() => {
+    if (teamFilter === 'All') return team;
+    return team.filter(m => m.team === teamFilter);
+  }, [team, teamFilter]);
+
   const chartData = useMemo(() => {
-    return team.map(member => {
-      const scores = calculateScores(member.metrics);
+    return filteredTeam.map(member => {
+      const scores = calculateScores(member);
       return {
         name: member.name,
         Pulse: scores.pulse,
@@ -117,52 +145,77 @@ function ReportView({ team, calculateScores }) {
         Qual: scores.qual,
       };
     });
-  }, [team, calculateScores]);
+  }, [filteredTeam, calculateScores]);
 
   const radarData = useMemo(() => {
-    if (team.length === 0) return [];
+    if (filteredTeam.length === 0) return [];
     
-    const avgs = team.reduce((acc, m) => {
-      acc.velocity += Number(m.metrics.velocity) || 0;
-      acc.quality += Number(m.metrics.quality) || 0;
-      acc.presence += Number(m.metrics.presence) || 0;
+    const avgs = filteredTeam.reduce((acc, m) => {
+      acc.sprint += Number(m.metrics.sprint) || 0;
+      acc.qa += Number(m.metrics.qa) || 0;
+      acc.sync += Number(m.metrics.sync) || 0;
       acc.milestone += Number(m.metrics.milestone) || 0;
-      acc.excellence += ((Number(m.metrics.excellence) || 0) / 5) * 100;
-      acc.collaboration += ((Number(m.metrics.collaboration) || 0) / 5) * 100;
-      acc.ownership += ((Number(m.metrics.ownership) || 0) / 5) * 100;
+      acc.excellence += ((Number(m.peerFeedback.excellence) || 0) / 5) * 100;
+      acc.collab += ((Number(m.peerFeedback.collab) || 0) / 5) * 100;
+      acc.ownership += ((Number(m.peerFeedback.ownership) || 0) / 5) * 100;
       return acc;
-    }, { velocity: 0, quality: 0, presence: 0, milestone: 0, excellence: 0, collaboration: 0, ownership: 0 });
+    }, { sprint: 0, qa: 0, sync: 0, milestone: 0, excellence: 0, collab: 0, ownership: 0 });
 
-    const count = team.length;
+    const count = filteredTeam.length;
     return [
-      { dimension: 'Velocity', value: Math.round(avgs.velocity / count), fullMark: 100 },
-      { dimension: 'Quality', value: Math.round(avgs.quality / count), fullMark: 100 },
-      { dimension: 'Presence', value: Math.round(avgs.presence / count), fullMark: 100 },
+      { dimension: 'Sprint', value: Math.round(avgs.sprint / count), fullMark: 100 },
+      { dimension: 'QA', value: Math.round(avgs.qa / count), fullMark: 100 },
+      { dimension: 'Sync', value: Math.round(avgs.sync / count), fullMark: 100 },
       { dimension: 'Milestone', value: Math.round(avgs.milestone / count), fullMark: 100 },
       { dimension: 'Excellence', value: Math.round(avgs.excellence / count), fullMark: 100 },
-      { dimension: 'Collab', value: Math.round(avgs.collaboration / count), fullMark: 100 },
+      { dimension: 'Collab', value: Math.round(avgs.collab / count), fullMark: 100 },
       { dimension: 'Ownership', value: Math.round(avgs.ownership / count), fullMark: 100 },
     ];
-  }, [team]);
+  }, [filteredTeam]);
 
   return (
     <div className="space-y-6">
-      <header className="mb-8">
-        <h2 className="text-3xl font-bold text-white">Report View</h2>
-        <p className="text-slate-400 mt-2">Studio-wide performance metrics and dimension mapping.</p>
+      <header className="mb-8 flex justify-between items-end">
+        <div>
+          <h2 className="text-3xl font-bold text-white">Report View</h2>
+          <p className="text-slate-400 mt-2">Studio-wide performance metrics and dimension mapping.</p>
+        </div>
+        <select 
+          value={teamFilter}
+          onChange={(e) => setTeamFilter(e.target.value)}
+          className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+        >
+          <option value="All">All Teams</option>
+          <option value="Software">Software</option>
+          <option value="Design">Design</option>
+        </select>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="lg:col-span-2 bg-slate-900 rounded-xl p-6 border border-slate-800 shadow-xl flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-slate-400 mb-1">Studio Milestone Status</h3>
+            <p className="text-xl font-bold text-white font-mono">{milestone}</p>
+          </div>
+          <div className={`px-4 py-2 rounded-lg font-bold font-mono ${
+            milestoneStatus === 'On Track' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+            milestoneStatus === 'Minor Blockers' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+            'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+          }`}>
+            {milestoneStatus.toUpperCase()}
+          </div>
+        </div>
+
         <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 shadow-xl">
           <h3 className="text-lg font-medium text-slate-200 mb-6">7 Core Dimensions (Studio Avg)</h3>
           <div className="h-[350px]">
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
                 <PolarGrid stroke="#334155" />
-                <PolarAngleAxis dataKey="dimension" tick={{ fill: '#94a3b8', fontSize: 12, fontFamily: 'Inter' }} />
-                <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fill: '#64748b' }} />
+                <PolarAngleAxis dataKey="dimension" tick={{ fill: '#94a3b8', fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }} />
+                <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fill: '#64748b', fontFamily: "'JetBrains Mono', monospace" }} />
                 <Radar name="Studio Average" dataKey="value" stroke="#6366f1" fill="#6366f1" fillOpacity={0.4} />
-                <RechartsTooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', fontFamily: 'JetBrains Mono' }} />
+                <RechartsTooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', fontFamily: "'JetBrains Mono', monospace" }} />
               </RadarChart>
             </ResponsiveContainer>
           </div>
@@ -174,11 +227,11 @@ function ReportView({ team, calculateScores }) {
              <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                <XAxis dataKey="name" stroke="#94a3b8" tick={{ fontSize: 12, fontFamily: 'Inter' }} angle={-45} textAnchor="end" />
-                <YAxis stroke="#94a3b8" domain={[0, 100]} tick={{ fontFamily: 'JetBrains Mono' }} />
+                <XAxis dataKey="name" stroke="#94a3b8" tick={{ fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }} angle={-45} textAnchor="end" />
+                <YAxis stroke="#94a3b8" domain={[0, 100]} tick={{ fontFamily: "'JetBrains Mono', monospace" }} />
                 <RechartsTooltip 
                   cursor={{ fill: '#1e293b' }}
-                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', fontFamily: 'JetBrains Mono' }}
+                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', fontFamily: "'JetBrains Mono', monospace" }}
                 />
                 <Bar dataKey="Pulse" fill="#10b981" radius={[4, 4, 0, 0]} />
               </BarChart>
@@ -192,6 +245,7 @@ function ReportView({ team, calculateScores }) {
 
 function TeamRosterView({ team, setTeam }) {
   const [newMember, setNewMember] = useState({ name: '', role: '', teamName: 'Software' });
+  const [teamFilter, setTeamFilter] = useState('All');
 
   const handleAdd = (e) => {
     e.preventDefault();
@@ -203,7 +257,8 @@ function TeamRosterView({ team, setTeam }) {
       role: newMember.role,
       team: newMember.teamName,
       history: [],
-      metrics: { velocity: 0, quality: 0, presence: 0, milestone: 0, excellence: 0, collaboration: 0, ownership: 0 }
+      metrics: { sprint: 0, qa: 0, sync: 0, milestone: 0 },
+      peerFeedback: { excellence: 0, collab: 0, ownership: 0 }
     }]);
     setNewMember({ name: '', role: '', teamName: 'Software' });
   };
@@ -212,11 +267,27 @@ function TeamRosterView({ team, setTeam }) {
     setTeam(team.filter(m => m.id !== id));
   };
 
+  const filteredTeam = useMemo(() => {
+    if (teamFilter === 'All') return team;
+    return team.filter(m => m.team === teamFilter);
+  }, [team, teamFilter]);
+
   return (
     <div className="space-y-6 max-w-5xl">
-      <header className="mb-8">
-        <h2 className="text-3xl font-bold text-white">Team Roster</h2>
-        <p className="text-slate-400 mt-2">Manage employee records, roles, and teams.</p>
+      <header className="mb-8 flex justify-between items-end">
+        <div>
+          <h2 className="text-3xl font-bold text-white">Team Roster</h2>
+          <p className="text-slate-400 mt-2">Manage employee records, roles, and teams.</p>
+        </div>
+        <select 
+          value={teamFilter}
+          onChange={(e) => setTeamFilter(e.target.value)}
+          className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+        >
+          <option value="All">All Teams</option>
+          <option value="Software">Software</option>
+          <option value="Design">Design</option>
+        </select>
       </header>
 
       <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 shadow-xl mb-8">
@@ -273,7 +344,7 @@ function TeamRosterView({ team, setTeam }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800">
-            {team.map(member => (
+            {filteredTeam.map(member => (
               <tr key={member.id} className="hover:bg-slate-800/30 transition-colors">
                 <td className="px-6 py-4 font-medium text-slate-200">{member.name}</td>
                 <td className="px-6 py-4 text-slate-400">{member.role}</td>
@@ -296,11 +367,13 @@ function TeamRosterView({ team, setTeam }) {
   );
 }
 
-function ReviewEntryView({ team, setTeam, calculateScores }) {
+function ReviewEntryView({ team, setTeam, calculateScores, milestone }) {
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [metrics, setMetrics] = useState({
-    velocity: '', quality: '', presence: '', milestone: '',
-    excellence: '', collaboration: '', ownership: ''
+    sprint: '', qa: '', sync: '', milestone: ''
+  });
+  const [peerFeedback, setPeerFeedback] = useState({
+    excellence: '', collab: '', ownership: ''
   });
 
   const activeMember = team.find(m => m.id === Number(selectedMemberId));
@@ -311,30 +384,41 @@ function ReviewEntryView({ team, setTeam, calculateScores }) {
     const member = team.find(m => m.id === Number(id));
     if (member) {
       setMetrics({ ...member.metrics });
+      setPeerFeedback({ ...member.peerFeedback });
     } else {
       setMetrics({
-        velocity: '', quality: '', presence: '', milestone: '',
-        excellence: '', collaboration: '', ownership: ''
+        sprint: '', qa: '', sync: '', milestone: ''
+      });
+      setPeerFeedback({
+        excellence: '', collab: '', ownership: ''
       });
     }
   };
 
-  const handleChange = (field, value) => {
+  const handleMetricsChange = (field, value) => {
     setMetrics(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handlePeerFeedbackChange = (field, value) => {
+    setPeerFeedback(prev => ({ ...prev, [field]: value }));
   };
 
   const handleSaveDraft = () => {
     if (!activeMember) return;
-    setTeam(team.map(m => m.id === activeMember.id ? { ...m, metrics: { ...metrics } } : m));
+    setTeam(team.map(m => m.id === activeMember.id ? { ...m, metrics: { ...metrics }, peerFeedback: { ...peerFeedback } } : m));
     alert(`Draft saved for ${activeMember.name}!`);
   };
 
-  const isFormValid = Object.values(metrics).every(val => val !== '' && !isNaN(val));
+  const isFormValid = Object.values(metrics).every(val => val !== '' && !isNaN(val)) && 
+                      Object.values(peerFeedback).every(val => val !== '' && !isNaN(val));
   let currentScores = null;
   if(isFormValid) {
-    currentScores = calculateScores(metrics);
+    currentScores = calculateScores({ metrics, peerFeedback });
   } else if (activeMember) {
-    currentScores = calculateScores({ ...activeMember.metrics, ...metrics });
+    currentScores = calculateScores({ 
+      metrics: { ...activeMember.metrics, ...metrics },
+      peerFeedback: { ...activeMember.peerFeedback, ...peerFeedback }
+    });
   }
 
   const handleSignOff = () => {
@@ -349,19 +433,22 @@ function ReviewEntryView({ team, setTeam, calculateScores }) {
         const newHistoryRecord = {
           month: monthId,
           metrics: { ...metrics },
+          peerFeedback: { ...peerFeedback },
           pulse: currentScores.pulse
         };
         return { 
           ...m, 
           history: [...(m.history || []), newHistoryRecord],
-          // Reset current metrics to zero indicating a fresh review period
-          metrics: { velocity: 0, quality: 0, presence: 0, milestone: 0, excellence: 0, collaboration: 0, ownership: 0 }
+          metrics: { ...metrics },
+          peerFeedback: { ...peerFeedback }
         };
       }
       return m;
     }));
     
-    setMetrics({ velocity: '', quality: '', presence: '', milestone: '', excellence: '', collaboration: '', ownership: '' });
+    // Clear the form after saving
+    setMetrics({ sprint: '', qa: '', sync: '', milestone: '' });
+    setPeerFeedback({ excellence: '', collab: '', ownership: '' });
     setSelectedMemberId('');
     alert(`Review for ${activeMember.name} has been signed-off and finalized! Historic data updated.`);
   };
@@ -371,6 +458,10 @@ function ReviewEntryView({ team, setTeam, calculateScores }) {
       <header className="mb-8">
         <h2 className="text-3xl font-bold text-white">Review Entry</h2>
         <p className="text-slate-400 mt-2">Enter objective metrics and 360 peer feedback. Finalize the review to record it to history.</p>
+        <div className="mt-4 inline-flex items-center gap-2 bg-indigo-500/10 text-indigo-400 px-3 py-1.5 rounded-lg border border-indigo-500/20 text-sm font-medium">
+          <Target size={16} />
+          <span>Current Milestone: {milestone}</span>
+        </div>
       </header>
 
       <div className="bg-slate-900 rounded-xl p-8 border border-slate-800 shadow-xl space-y-8">
@@ -396,10 +487,10 @@ function ReviewEntryView({ team, setTeam, calculateScores }) {
                 Quantitative <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-mono">60% WEIGHT</span>
               </h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <MetricInput label="Velocity (%)" value={metrics.velocity} onChange={(v) => handleChange('velocity', v)} max="100" />
-                <MetricInput label="Quality (%)" value={metrics.quality} onChange={(v) => handleChange('quality', v)} max="100" />
-                <MetricInput label="Presence (%)" value={metrics.presence} onChange={(v) => handleChange('presence', v)} max="100" />
-                <MetricInput label="Milestone (%)" value={metrics.milestone} onChange={(v) => handleChange('milestone', v)} max="100" />
+                <MetricInput label="Sprint Velocity (%)" value={metrics.sprint} onChange={(v) => handleMetricsChange('sprint', v)} max="100" />
+                <MetricInput label="QA & Testing (%)" value={metrics.qa} onChange={(v) => handleMetricsChange('qa', v)} max="100" />
+                <MetricInput label="Daily Sync (%)" value={metrics.sync} onChange={(v) => handleMetricsChange('sync', v)} max="100" />
+                <MetricInput label="Milestone Impact (%)" value={metrics.milestone} onChange={(v) => handleMetricsChange('milestone', v)} max="100" />
               </div>
             </div>
 
@@ -410,9 +501,9 @@ function ReviewEntryView({ team, setTeam, calculateScores }) {
               </h4>
               <p className="text-xs text-slate-500 mb-4 uppercase tracking-wider">Peer Feedback Ratings (1-5)</p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <MetricInput label="Excellence (1-5)" value={metrics.excellence} onChange={(v) => handleChange('excellence', v)} max="5" />
-                <MetricInput label="Collaboration (1-5)" value={metrics.collaboration} onChange={(v) => handleChange('collaboration', v)} max="5" />
-                <MetricInput label="Ownership (1-5)" value={metrics.ownership} onChange={(v) => handleChange('ownership', v)} max="5" />
+                <MetricInput label="Excellence (1-5)" value={peerFeedback.excellence} onChange={(v) => handlePeerFeedbackChange('excellence', v)} max="5" />
+                <MetricInput label="Cross-Collaboration (1-5)" value={peerFeedback.collab} onChange={(v) => handlePeerFeedbackChange('collab', v)} max="5" />
+                <MetricInput label="Ownership (1-5)" value={peerFeedback.ownership} onChange={(v) => handlePeerFeedbackChange('ownership', v)} max="5" />
               </div>
             </div>
 
@@ -482,30 +573,47 @@ function HistoryView({ team }) {
     }));
   }, [activeMember]);
 
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
-    <div className="space-y-6 max-w-5xl">
-      <header className="mb-8 flex items-center justify-between">
+    <div className="space-y-6 max-w-5xl print:max-w-none print:m-0 print:p-8">
+      <header className="mb-8 flex items-center justify-between print:mb-4">
         <div>
-          <h2 className="text-3xl font-bold text-white">History & Growth</h2>
-          <p className="text-slate-400 mt-2">Track performance velocity and historical growth over time.</p>
+          <h2 className="text-3xl font-bold text-white print:text-slate-900">
+            {activeMember ? `${activeMember.name} - Performance Summary` : 'History & Growth'}
+          </h2>
+          <p className="text-slate-400 mt-2 print:text-slate-600">Track performance velocity and historical growth over time.</p>
         </div>
-        <select 
-          value={selectedMemberId}
-          onChange={(e) => setSelectedMemberId(e.target.value)}
-          className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
-        >
-          {team.map(member => (
-            <option key={member.id} value={member.id}>{member.name}</option>
-          ))}
-        </select>
+        <div className="flex gap-4 print:hidden">
+          <select 
+            value={selectedMemberId}
+            onChange={(e) => setSelectedMemberId(e.target.value)}
+            className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
+          >
+            {team.map(member => (
+              <option key={member.id} value={member.id}>{member.name}</option>
+            ))}
+          </select>
+          {activeMember && (
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-medium transition-colors border border-slate-700"
+            >
+              <Printer size={18} />
+              <span>Export PDF</span>
+            </button>
+          )}
+        </div>
       </header>
 
       {activeMember ? (
         chartData.length > 0 ? (
-          <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 shadow-xl">
-            <h3 className="text-lg font-medium text-slate-200 mb-6 flex justify-between">
+          <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 shadow-xl print:bg-white print:border-slate-300 print:shadow-none">
+            <h3 className="text-lg font-medium text-slate-200 mb-6 flex justify-between print:text-slate-900">
               <span>Historical Pulse Score Trend</span>
-              <span className="text-sm font-normal text-slate-400 bg-slate-950 px-3 py-1 rounded-full">{activeMember.history.length} finalized periods</span>
+              <span className="text-sm font-normal text-slate-400 bg-slate-950 px-3 py-1 rounded-full print:bg-slate-100 print:text-slate-700">{activeMember.history.length} finalized periods</span>
             </h3>
             <div className="h-[400px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -540,6 +648,61 @@ function HistoryView({ team }) {
       ) : (
         <p className="text-slate-500">Please select an employee.</p>
       )}
+    </div>
+  );
+}
+
+function MilestoneManagerView({ milestone, setMilestone, milestoneStatus, setMilestoneStatus }) {
+  const [draftMilestone, setDraftMilestone] = useState(milestone);
+  const [draftStatus, setDraftStatus] = useState(milestoneStatus);
+
+  const handleSave = (e) => {
+    e.preventDefault();
+    setMilestone(draftMilestone);
+    setMilestoneStatus(draftStatus);
+    alert('Milestone settings updated successfully!');
+  };
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <header className="mb-8">
+        <h2 className="text-3xl font-bold text-white">Milestone Settings</h2>
+        <p className="text-slate-400 mt-2">Define the studio goal for the current month and its status. This appears on performance reviews and the dashboard.</p>
+      </header>
+
+      <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 shadow-xl">
+        <h3 className="text-lg font-medium text-slate-200 mb-4">Current Milestone</h3>
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">Milestone Description</label>
+            <input 
+              type="text" 
+              value={draftMilestone}
+              onChange={e => setDraftMilestone(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-sans"
+              placeholder="e.g. March 2026 - Alpha Release"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">Project Health Status</label>
+            <select 
+              value={draftStatus}
+              onChange={e => setDraftStatus(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500 transition-all font-sans"
+            >
+              <option value="On Track">On Track</option>
+              <option value="Minor Blockers">Minor Blockers</option>
+              <option value="Critical / Needs Review">Critical / Needs Review</option>
+            </select>
+          </div>
+          <button 
+            type="submit"
+            className="bg-indigo-500 hover:bg-indigo-600 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+          >
+            Save Settings
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
