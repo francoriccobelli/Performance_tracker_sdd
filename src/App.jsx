@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LayoutDashboard, Users, UserCheck, History, Target, Settings, Printer } from 'lucide-react';
+import { LayoutDashboard, Users, UserCheck, History, Target, Settings, Printer, Clock, LogOut, Briefcase } from 'lucide-react';
 import {
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer,
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip
@@ -12,7 +12,7 @@ const STORAGE_KEY_MILESTONE_STATUS = 'studiopulse_milestone_status_v2';
 
 const initialTeam = [
   {
-    id: 1, name: 'Alice Smith', role: 'Software Engineer', team: 'Software',
+    id: 1, name: 'Alice Smith', role: 'Software Engineer', team: 'Software', track: 'IC',
     metrics: { sprint: 85, qa: 90, sync: 95, milestone: 80 },
     peerFeedback: { excellence: 4, collab: 5, ownership: 4 },
     history: [
@@ -21,13 +21,13 @@ const initialTeam = [
     ]
   },
   {
-    id: 2, name: 'Bob Jones', role: 'UX Designer', team: 'Design',
+    id: 2, name: 'Bob Jones', role: 'UX Designer', team: 'Design', track: 'IC',
     metrics: { sprint: 75, qa: 85, sync: 90, milestone: 70 },
     peerFeedback: { excellence: 3, collab: 4, ownership: 4 },
     history: []
   },
   {
-    id: 3, name: 'Charlie Brown', role: 'Product Manager', team: 'Software',
+    id: 3, name: 'Charlie Brown', role: 'Product Manager', team: 'Software', track: 'Manager',
     metrics: { sprint: 90, qa: 85, sync: 100, milestone: 95 },
     peerFeedback: { excellence: 5, collab: 4, ownership: 5 },
     history: [
@@ -51,6 +51,8 @@ const getStoredMilestone = () => {
 };
 
 export default function App() {
+  const [authenticatedUser, setAuthenticatedUser] = useState(null);
+  const [presence, setPresence] = useState('Active');
   const [activeView, setActiveView] = useState('dashboard');
   const [team, setTeam] = useState(getStoredTeam);
   const [milestone, setMilestone] = useState(getStoredMilestone);
@@ -64,6 +66,10 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY_MILESTONE, milestone);
     localStorage.setItem(STORAGE_KEY_MILESTONE_STATUS, milestoneStatus);
   }, [milestone, milestoneStatus]);
+
+  if (!authenticatedUser) {
+    return <LoginView onLogin={setAuthenticatedUser} />;
+  }
 
   const calculateScores = (member) => {
     const metrics = member.metrics || { sprint: 0, qa: 0, sync: 0, milestone: 0 };
@@ -81,6 +87,7 @@ export default function App() {
     { id: 'team', label: 'Team Roster', icon: Users },
     { id: 'review', label: 'Review Entry', icon: UserCheck },
     { id: 'history', label: 'History & Growth', icon: History },
+    { id: 'allocation', label: 'Daily Allocation', icon: Briefcase },
     { id: 'milestone', label: 'Milestone Settings', icon: Settings },
   ];
 
@@ -92,7 +99,33 @@ export default function App() {
             <Target className="w-6 h-6" />
             <h1 className="text-2xl font-bold tracking-tight">StudioPulse</h1>
           </div>
-          <p className="text-slate-400 text-sm">R&D Performance Engine</p>
+          <p className="text-slate-400 text-sm mb-4">R&D Performance Engine</p>
+          <div className="bg-slate-950 rounded-lg p-3 border border-slate-800 shadow-inner">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-slate-300">{authenticatedUser.name}</span>
+              <button onClick={() => setAuthenticatedUser(null)} className="text-slate-500 hover:text-rose-400 transition-colors" title="Logout">
+                <LogOut size={16} />
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock size={14} className="text-slate-500" />
+              <select
+                value={presence}
+                onChange={(e) => setPresence(e.target.value)}
+                className={`text-xs font-bold rounded px-2 py-1 bg-slate-900 border focus:outline-none w-full appearance-none cursor-pointer ${
+                  presence === 'Active' ? 'text-emerald-400 border-emerald-500/30' :
+                  presence === 'Break' ? 'text-amber-400 border-amber-500/30' :
+                  presence === 'Lunch' ? 'text-amber-400 border-amber-500/30' :
+                  'text-slate-400 border-slate-700'
+                }`}
+              >
+                <option value="Active">🟢 Active (Punch In)</option>
+                <option value="Break">🟠 Break</option>
+                <option value="Lunch">🟡 Lunch</option>
+                <option value="Offline">⚫ Offline (Punch Out)</option>
+              </select>
+            </div>
+          </div>
         </div>
         <nav className="flex-1 p-4 space-y-2">
           {navItems.map(item => {
@@ -121,6 +154,7 @@ export default function App() {
         {activeView === 'team' && <TeamRosterView team={team} setTeam={setTeam} />}
         {activeView === 'review' && <ReviewEntryView team={team} setTeam={setTeam} calculateScores={calculateScores} milestone={milestone} />}
         {activeView === 'history' && <HistoryView team={team} />}
+        {activeView === 'allocation' && <AllocationView />}
         {activeView === 'milestone' && <MilestoneManagerView milestone={milestone} setMilestone={setMilestone} milestoneStatus={milestoneStatus} setMilestoneStatus={setMilestoneStatus} />}
       </main>
     </div>
@@ -147,17 +181,27 @@ function ReportView({ team, calculateScores, milestone, milestoneStatus }) {
     });
   }, [filteredTeam, calculateScores]);
 
+  const nineBoxMatrix = useMemo(() => {
+    const boxes = Array(9).fill().map(() => []);
+    chartData.forEach(m => {
+      let x = m.Quant < 60 ? 0 : m.Quant < 85 ? 1 : 2;
+      let y = m.Qual < 60 ? 0 : m.Qual < 85 ? 1 : 2;
+      boxes[(2 - y) * 3 + x].push(m);
+    });
+    return boxes;
+  }, [chartData]);
+
   const radarData = useMemo(() => {
     if (filteredTeam.length === 0) return [];
     
     const avgs = filteredTeam.reduce((acc, m) => {
-      acc.sprint += Number(m.metrics.sprint) || 0;
-      acc.qa += Number(m.metrics.qa) || 0;
-      acc.sync += Number(m.metrics.sync) || 0;
-      acc.milestone += Number(m.metrics.milestone) || 0;
-      acc.excellence += ((Number(m.peerFeedback.excellence) || 0) / 5) * 100;
-      acc.collab += ((Number(m.peerFeedback.collab) || 0) / 5) * 100;
-      acc.ownership += ((Number(m.peerFeedback.ownership) || 0) / 5) * 100;
+      acc.sprint += Number(m.metrics?.sprint) || 0;
+      acc.qa += Number(m.metrics?.qa) || 0;
+      acc.sync += Number(m.metrics?.sync) || 0;
+      acc.milestone += Number(m.metrics?.milestone) || 0;
+      acc.excellence += ((Number(m.peerFeedback?.excellence) || 0) / 5) * 100;
+      acc.collab += ((Number(m.peerFeedback?.collab) || 0) / 5) * 100;
+      acc.ownership += ((Number(m.peerFeedback?.ownership) || 0) / 5) * 100;
       return acc;
     }, { sprint: 0, qa: 0, sync: 0, milestone: 0, excellence: 0, collab: 0, ownership: 0 });
 
@@ -174,7 +218,7 @@ function ReportView({ team, calculateScores, milestone, milestoneStatus }) {
   }, [filteredTeam]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in">
       <header className="mb-8 flex justify-between items-end">
         <div>
           <h2 className="text-3xl font-bold text-white">Report View</h2>
@@ -238,13 +282,44 @@ function ReportView({ team, calculateScores, milestone, milestoneStatus }) {
             </ResponsiveContainer>
           </div>
         </div>
+
+        <div className="lg:col-span-2 bg-slate-900 rounded-xl p-6 border border-slate-800 shadow-xl">
+          <h3 className="text-lg font-medium text-slate-200 mb-6">9-Box Performance vs Potential Matrix</h3>
+          <div className="grid grid-cols-3 grid-rows-3 gap-3 h-[550px]">
+            {nineBoxMatrix.map((boxMembers, idx) => {
+              const bgColors = [
+                'bg-amber-500/10 border-amber-500/30', 'bg-indigo-500/10 border-indigo-500/30', 'bg-emerald-500/20 border-emerald-500/40',
+                'bg-rose-500/10 border-rose-500/30', 'bg-slate-800/50 border-slate-700/50', 'bg-indigo-500/10 border-indigo-500/30',
+                'bg-rose-500/20 border-rose-500/40', 'bg-amber-500/10 border-amber-500/30', 'bg-emerald-500/10 border-emerald-500/30'
+              ];
+              const labels = [
+                'Enigma (Low Perf, High Pot)', 'Growth (Mod Perf, High Pot)', 'Future Leader (High Perf, High Pot)',
+                'Dilemma (Low Perf, Mod Pot)', 'Core Employee (Mod Perf, Mod Pot)', 'High Impact (High Perf, Mod Pot)',
+                'Underperformer (Low, Low)', 'Effective Worker (Mod Perf, Low Pot)', 'Trusted Expert (High Perf, Low Pot)'
+              ];
+              return (
+                <div key={idx} className={`p-4 rounded-xl border flex flex-col ${bgColors[idx]}`}>
+                  <span className="text-xs font-semibold text-slate-300 mb-3 uppercase tracking-wider">{labels[idx]}</span>
+                  <div className="flex-1 flex flex-wrap content-start gap-2">
+                    {boxMembers.map(m => (
+                      <div key={m.name} className="px-3 py-2 bg-slate-950/80 rounded block border border-slate-800 text-sm font-medium text-slate-200 shadow-sm shrink-0 min-w-full lg:min-w-0 flex items-center justify-between gap-4">
+                        <span>{m.name}</span>
+                        <div className="text-[10px] text-slate-400 font-mono tracking-wider bg-slate-900 px-2 py-0.5 rounded border border-slate-800">P:{m.Quant} Q:{m.Qual}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
 function TeamRosterView({ team, setTeam }) {
-  const [newMember, setNewMember] = useState({ name: '', role: '', teamName: 'Software' });
+  const [newMember, setNewMember] = useState({ name: '', role: '', teamName: 'Software', track: 'IC' });
   const [teamFilter, setTeamFilter] = useState('All');
 
   const handleAdd = (e) => {
@@ -256,11 +331,12 @@ function TeamRosterView({ team, setTeam }) {
       name: newMember.name,
       role: newMember.role,
       team: newMember.teamName,
+      track: newMember.track,
       history: [],
       metrics: { sprint: 0, qa: 0, sync: 0, milestone: 0 },
       peerFeedback: { excellence: 0, collab: 0, ownership: 0 }
     }]);
-    setNewMember({ name: '', role: '', teamName: 'Software' });
+    setNewMember({ name: '', role: '', teamName: 'Software', track: 'IC' });
   };
 
   const handleDelete = (id) => {
@@ -273,7 +349,7 @@ function TeamRosterView({ team, setTeam }) {
   }, [team, teamFilter]);
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-5xl animate-in">
       <header className="mb-8 flex justify-between items-end">
         <div>
           <h2 className="text-3xl font-bold text-white">Team Roster</h2>
@@ -314,6 +390,17 @@ function TeamRosterView({ team, setTeam }) {
             />
           </div>
           <div className="w-48">
+            <label className="block text-sm text-slate-400 mb-1">Track</label>
+            <select 
+              value={newMember.track}
+              onChange={e => setNewMember({...newMember, track: e.target.value})}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-sans h-[42px]"
+            >
+              <option value="IC">IC</option>
+              <option value="Manager">Manager</option>
+            </select>
+          </div>
+          <div className="w-48">
             <label className="block text-sm text-slate-400 mb-1">Team</label>
             <select 
               value={newMember.teamName}
@@ -339,6 +426,7 @@ function TeamRosterView({ team, setTeam }) {
             <tr>
               <th className="px-6 py-4 text-sm font-medium text-slate-400">Name</th>
               <th className="px-6 py-4 text-sm font-medium text-slate-400">Role</th>
+              <th className="px-6 py-4 text-sm font-medium text-slate-400">Track</th>
               <th className="px-6 py-4 text-sm font-medium text-slate-400">Team</th>
               <th className="px-6 py-4 text-sm font-medium text-slate-400 text-right">Actions</th>
             </tr>
@@ -348,6 +436,11 @@ function TeamRosterView({ team, setTeam }) {
               <tr key={member.id} className="hover:bg-slate-800/30 transition-colors">
                 <td className="px-6 py-4 font-medium text-slate-200">{member.name}</td>
                 <td className="px-6 py-4 text-slate-400">{member.role}</td>
+                <td className="px-6 py-4">
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${member.track === 'Manager' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-slate-800 text-slate-300 border-slate-700'}`}>
+                    {member.track || 'IC'}
+                  </span>
+                </td>
                 <td className="px-6 py-4">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${member.team === 'Software' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
                     {member.team}
@@ -383,8 +476,8 @@ function ReviewEntryView({ team, setTeam, calculateScores, milestone }) {
     setSelectedMemberId(id);
     const member = team.find(m => m.id === Number(id));
     if (member) {
-      setMetrics({ ...member.metrics });
-      setPeerFeedback({ ...member.peerFeedback });
+      setMetrics({ ...(member.metrics || { sprint: '', qa: '', sync: '', milestone: '' }) });
+      setPeerFeedback({ ...(member.peerFeedback || { excellence: '', collab: '', ownership: '' }) });
     } else {
       setMetrics({
         sprint: '', qa: '', sync: '', milestone: ''
@@ -454,7 +547,7 @@ function ReviewEntryView({ team, setTeam, calculateScores, milestone }) {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-4xl animate-in">
       <header className="mb-8">
         <h2 className="text-3xl font-bold text-white">Review Entry</h2>
         <p className="text-slate-400 mt-2">Enter objective metrics and 360 peer feedback. Finalize the review to record it to history.</p>
@@ -474,7 +567,7 @@ function ReviewEntryView({ team, setTeam, calculateScores, milestone }) {
           >
              <option value="">-- Choose a team member --</option>
             {team.map(member => (
-              <option key={member.id} value={member.id}>{member.name} ({member.team})</option>
+              <option key={member.id} value={member.id}>{member.name} ({member.team} - {member.track || 'IC'})</option>
             ))}
           </select>
         </div>
@@ -578,7 +671,7 @@ function HistoryView({ team }) {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl print:max-w-none print:m-0 print:p-8">
+    <div className="space-y-6 max-w-5xl print:max-w-none print:m-0 print:p-8 animate-in">
       <header className="mb-8 flex items-center justify-between print:mb-4">
         <div>
           <h2 className="text-3xl font-bold text-white print:text-slate-900">
@@ -664,7 +757,7 @@ function MilestoneManagerView({ milestone, setMilestone, milestoneStatus, setMil
   };
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-3xl animate-in">
       <header className="mb-8">
         <h2 className="text-3xl font-bold text-white">Milestone Settings</h2>
         <p className="text-slate-400 mt-2">Define the studio goal for the current month and its status. This appears on performance reviews and the dashboard.</p>
@@ -702,6 +795,127 @@ function MilestoneManagerView({ milestone, setMilestone, milestoneStatus, setMil
             Save Settings
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function LoginView({ onLogin }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (username.trim()) {
+      onLogin({ name: username, role: 'Employee' });
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 animate-in">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+        <div className="flex items-center justify-center gap-3 text-indigo-500 mb-8">
+          <Target className="w-10 h-10" />
+          <h1 className="text-3xl font-bold tracking-tight text-white">StudioPulse</h1>
+        </div>
+        <form onSubmit={handleLogin} className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-2">Username or Studio ID</label>
+            <input 
+              type="text" 
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-slate-200 font-sans focus:outline-none focus:border-indigo-500 transition-all font-mono"
+              placeholder="e.g. employee.name"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-2">Secure Passkey</label>
+            <input 
+              type="password" 
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-slate-200 font-sans focus:outline-none focus:border-indigo-500 transition-all font-mono"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+          <button 
+            type="submit"
+            className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-[0_0_15px_rgba(99,102,241,0.2)]"
+          >
+            Authenticate Session
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AllocationView() {
+  const [allocations, setAllocations] = useState([
+    { id: 1, project: 'Project Alpha (Core Platform)', hours: 4 },
+    { id: 2, project: 'Project Beta (Mobile App)', hours: 2 },
+  ]);
+
+  const totalHours = allocations.reduce((acc, curr) => acc + Number(curr.hours || 0), 0);
+
+  return (
+    <div className="space-y-6 max-w-4xl animate-in">
+      <header className="mb-8">
+        <h2 className="text-3xl font-bold text-white">Daily Allocation</h2>
+        <p className="text-slate-400 mt-2">Log your daily hours against active studio projects.</p>
+      </header>
+      
+      <div className="bg-slate-900 rounded-xl p-8 border border-slate-800 shadow-xl">
+        <div className="flex justify-between items-end mb-6">
+          <h3 className="text-lg font-medium text-slate-200">Today's Timesheet</h3>
+          <div className={`text-xl font-mono font-bold px-4 py-1 rounded-full border ${
+            totalHours === 8 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 
+            totalHours > 8 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+            'bg-slate-800 text-slate-300 border-slate-700'
+          }`}>
+            Total: {totalHours}h
+          </div>
+        </div>
+        
+        <div className="space-y-4">
+          {allocations.map((alloc, idx) => (
+            <div key={alloc.id} className="flex gap-4 items-center">
+              <input 
+                type="text" 
+                value={alloc.project}
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-slate-200 focus:outline-none font-mono text-sm"
+                readOnly
+              />
+              <div className="flex items-center gap-3">
+                <input 
+                  type="number" 
+                  min="0" max="24"
+                  value={alloc.hours}
+                  onChange={(e) => {
+                    const newAllocs = [...allocations];
+                    newAllocs[idx].hours = e.target.value;
+                    setAllocations(newAllocs);
+                  }}
+                  className="w-24 bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-slate-200 font-mono focus:outline-none focus:border-indigo-500 text-center"
+                />
+                <span className="text-slate-500 font-mono">hrs</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        
+        <button className="mt-6 text-indigo-400 font-medium hover:text-indigo-300 transition-colors text-sm">
+          + Add another project
+        </button>
+
+        <div className="mt-8 pt-6 border-t border-slate-800 flex justify-end">
+          <button className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 px-8 rounded-lg transition-all shadow-lg">
+            Submit Daily Log
+          </button>
+        </div>
       </div>
     </div>
   );
